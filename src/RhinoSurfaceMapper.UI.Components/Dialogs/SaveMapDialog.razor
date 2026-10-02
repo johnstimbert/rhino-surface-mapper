@@ -1,0 +1,41 @@
+@* Minimal functional dialog for saving the active map, dispatching Features.MapSession.SaveMap
+   via IMediator. Ported from Python's "save_map" dialog's three buttons (Replace / Save new
+   version / an explicit path when the map has never been saved). *@
+@namespace RhinoSurfaceMapper.UI.Components.Dialogs
+@using RhinoSurfaceMapper.Application.Features.MapSession
+
+@if (IsOpen)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog-box">
+            <h3>Save map</h3>
+
+            <div class="dialog-field">
+                <label for="save-mode">Save as</label>
+                <select id="save-mode" @bind="Mode">
+                    <option value="@SaveMode.Replace">Replace existing file</option>
+                    <option value="@SaveMode.NewVersion">Save as new version</option>
+                    <option value="@SaveMode.ExplicitPath">Choose a path…</option>
+                </select>
+            </div>
+
+            @if (Mode == SaveMode.ExplicitPath)
+            {
+                <div class="dialog-field">
+                    <label for="save-path">File path</label>
+                    <input id="save-path" @bind="ExplicitPath" @bind:event="oninput" />
+                </div>
+            }
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="dialog-error">@ErrorMessage</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" @onclick="CancelAsync" disabled="@_busy">Cancel</button>
+                <button type="button" @onclick="SubmitAsync" disabled="@_busy">Save</button>
+            </div>
+        </div>
+    </div>
+}

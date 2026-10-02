@@ -1,0 +1,27 @@
+@* Minimal toolbar wiring the Phase 4 save/open/deposit/mark/rig/new-map flows to the canvas,
+   per this phase's explicit allowance: "If wiring a full context-menu/toolbar is too large a
+   scope addition beyond 'dialogs' for this phase, a minimal MapToolbar with buttons that open
+   each dialog is sufficient." A full right-click context menu and click-to-place rig/mark
+   gestures on the canvas itself are deliberately deferred to a later UI-polish phase; "Place rig"
+   below places at the map's local origin (the live Rhino's last mapped position) rather than an
+   arbitrary clicked point, which is the one deliberate behavioural simplification this component
+   makes (see code-behind remarks). *@
+@namespace RhinoSurfaceMapper.UI.Components.Map
+@using RhinoSurfaceMapper.UI.Components.Dialogs
+
+<div class="map-toolbar">
+    <button type="button" @onclick="() => _openDialog = DialogKind.NewMap">New</button>
+    <button type="button" @onclick="() => _openDialog = DialogKind.Open">Open</button>
+    <button type="button" @onclick="() => _openDialog = DialogKind.Save">Save</button>
+    <button type="button" @onclick="() => _openDialog = DialogKind.Deposit">Add deposit</button>
+    <button type="button" @onclick="() => _openDialog = DialogKind.Mark">Add mark</button>
+    <button type="button" @onclick="PlaceRigAtRhinoPositionAsync">Place rig here</button>
+    <button type="button" @onclick="EnterMiningModeAsync">Mining mode</button>
+</div>
+
+<NewMapDialog IsOpen="@(_openDialog == DialogKind.NewMap)" OnClose="CloseDialog" />
+<OpenMapDialog IsOpen="@(_openDialog == DialogKind.Open)" OnClose="CloseDialog" />
+<SaveMapDialog IsOpen="@(_openDialog == DialogKind.Save)" OnClose="CloseDialog" />
+<DepositDialog IsOpen="@(_openDialog == DialogKind.Deposit)" OnClose="CloseDialog" />
+<MarkDialog IsOpen="@(_openDialog == DialogKind.Mark)" OnClose="CloseDialog" />
+<ProtectedMapDialog />

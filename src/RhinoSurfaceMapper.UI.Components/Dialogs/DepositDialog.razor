@@ -1,0 +1,46 @@
+@* Minimal functional dialog for creating or editing a mining deposit, dispatching
+   Features.Markers.CreateDeposit/UpdateDeposit via IMediator. Ported data contract only (name,
+   size tier, rig count) from qt_map_operations' deposit dialog — the Qt widget itself (and its
+   own unit tests under test_map_operations.py's "*_dialog_ui_*" group) is explicitly out of
+   scope per this phase's "extract only business logic" instruction. *@
+@namespace RhinoSurfaceMapper.UI.Components.Dialogs
+@using RhinoSurfaceMapper.Domain.Enums
+
+@if (IsOpen)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog-box">
+            <h3>@(DepositId is null ? "New deposit" : "Edit deposit")</h3>
+
+            <div class="dialog-field">
+                <label for="deposit-name">Name</label>
+                <input id="deposit-name" @bind="Name" @bind:event="oninput" />
+            </div>
+
+            <div class="dialog-field">
+                <label for="deposit-size">Size</label>
+                <select id="deposit-size" @bind="Size">
+                    <option value="@DepositSize.Pequeno">Small</option>
+                    <option value="@DepositSize.Medio">Medium</option>
+                    <option value="@DepositSize.Grande">Large</option>
+                    <option value="@DepositSize.Enorme">Huge</option>
+                </select>
+            </div>
+
+            <div class="dialog-field">
+                <label for="deposit-rigs">Rigs (1-6)</label>
+                <input id="deposit-rigs" type="number" min="1" max="6" @bind="Rigs" />
+            </div>
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="dialog-error">@ErrorMessage</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" @onclick="CancelAsync" disabled="@_busy">Cancel</button>
+                <button type="button" @onclick="SubmitAsync" disabled="@_busy">Save</button>
+            </div>
+        </div>
+    </div>
+}

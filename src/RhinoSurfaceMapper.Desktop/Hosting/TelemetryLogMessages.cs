@@ -41,4 +41,14 @@ internal static partial class TelemetryLogMessages
         Level = LogLevel.Error,
         Message = "Failed to apply an accepted telemetry sample")]
     public static partial void TelemetryApplyFailed(this ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logged once when the game process stops running, after live-session telemetry and any
+    /// pending map transition have been cleared.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LogEvents.TelemetryWentOffline,
+        Level = LogLevel.Information,
+        Message = "Elite Dangerous process stopped; cleared live telemetry and any pending map transition")]
+    public static partial void TelemetryWentOffline(this ILogger logger);
 }

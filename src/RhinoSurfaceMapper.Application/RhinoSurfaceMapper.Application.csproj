@@ -4,9 +4,10 @@
        from the root Directory.Build.props. -->
 
   <ItemGroup>
-    <!-- FluentValidation is not yet required: Phase 0 adds no command/query features.
-         It will be added in Phase 1+ once the first validated feature is implemented,
-         mirroring the reference app's explicit-handler / auto-scanned-validator split. -->
+    <!-- FluentValidation backs every Phase 4 feature's Validator; registrations are
+         auto-scanned via AddValidatorsFromAssembly in AddApplication(). -->
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
   </ItemGroup>

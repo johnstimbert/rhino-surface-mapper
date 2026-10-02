@@ -50,4 +50,20 @@ public sealed class MapSessionStore : IMapSessionStore
             _gate.Release();
         }
     }
+
+    /// <inheritdoc />
+    public async Task<TResult> MutateAsync<TResult>(Func<MapSession, CancellationToken, Task<TResult>> mutate, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            TResult result = await mutate(_session, cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _snapshot, MapSessionSnapshot.Capture(_session));
+            return result;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 }

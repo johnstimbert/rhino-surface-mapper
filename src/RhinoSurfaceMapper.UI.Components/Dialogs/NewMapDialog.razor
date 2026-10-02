@@ -1,0 +1,31 @@
+@* Minimal functional confirmation dialog for starting a fresh exploration pass, dispatching
+   Features.MapSession.NewMap via IMediator. Ported from qt_map_operations' "New map" confirmation
+   prompt; the KeepPml checkbox mirrors Python's own "keep current PML" option. *@
+@namespace RhinoSurfaceMapper.UI.Components.Dialogs
+
+@if (IsOpen)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog-box">
+            <h3>Start a new map?</h3>
+            <p>This clears deposits, rigs, marks and the recorded trail. It does not delete any saved file.</p>
+
+            <div class="dialog-field">
+                <label>
+                    <input type="checkbox" @bind="KeepPml" />
+                    Keep the current PML identity
+                </label>
+            </div>
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="dialog-error">@ErrorMessage</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" @onclick="CancelAsync" disabled="@_busy">Cancel</button>
+                <button type="button" @onclick="SubmitAsync" disabled="@_busy">New map</button>
+            </div>
+        </div>
+    </div>
+}

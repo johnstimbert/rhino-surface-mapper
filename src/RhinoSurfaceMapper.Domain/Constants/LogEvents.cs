@@ -120,6 +120,13 @@ public static class LogEvents
     public const int TelemetryApplyFailed = 2004;
 
     /// <summary>
+    /// <c>Desktop.Hosting.TelemetryHostedService</c> cleared live-session telemetry and any
+    /// pending map transition after observing the game process stop running — logged at
+    /// <c>Information</c>, ported from Python's <c>MapperWindow.set_offline</c>.
+    /// </summary>
+    public const int TelemetryWentOffline = 2005;
+
+    /// <summary>
     /// <c>UI.Components.Map.MapCanvas</c> finished creating its JavaScript interop module and
     /// is ready to push scenes — logged at <c>Debug</c>.
     /// </summary>

@@ -1,0 +1,45 @@
+@* Minimal functional dialog for opening a saved map file, dispatching
+   Features.MapSession.LoadMap via IMediator. Ported from Python's map-opening flow's file
+   selection step; the native Windows file-picker chrome itself (Platform.Windows concern) is
+   explicitly deferred — see this component's code-behind remarks — so this dialog offers a
+   plain path field plus a convenience list of the active PML's other saved versions
+   (Features.Pml.ListPmlVersions), which covers the "pick an existing version to open" half of
+   the ported behaviour without requiring a native picker. *@
+@namespace RhinoSurfaceMapper.UI.Components.Dialogs
+
+@if (IsOpen)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog-box">
+            <h3>Open map</h3>
+
+            @if (Versions.Count > 0)
+            {
+                <p>Other saved versions of the current PML:</p>
+                <div class="dialog-list">
+                    @foreach (var version in Versions)
+                    {
+                        <button type="button" @onclick="() => SelectVersion(version.Path)">
+                            @version.Path (@version.LastWriteTimeUtc.ToLocalTime())
+                        </button>
+                    }
+                </div>
+            }
+
+            <div class="dialog-field">
+                <label for="open-path">File path</label>
+                <input id="open-path" @bind="Path" @bind:event="oninput" />
+            </div>
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="dialog-error">@ErrorMessage</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" @onclick="CancelAsync" disabled="@_busy">Cancel</button>
+                <button type="button" @onclick="SubmitAsync" disabled="@_busy">Open</button>
+            </div>
+        </div>
+    </div>
+}

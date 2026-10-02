@@ -44,6 +44,16 @@ public sealed class MapSession
     private readonly List<RouteHistoryEntry> _routeHistory = [];
 
     /// <summary>
+    /// Path to the file this session was last loaded from or saved to, or <see langword="null"/>
+    /// for a map never persisted. Ported from <c>MapperWindow.current_map_path</c> (a Qt
+    /// presentation-layer field in Python, promoted to the session itself here because Phase 4's
+    /// save/open/PML-lifecycle features need it and <see cref="MapSession"/> is the only
+    /// state shared between them). Session-only: never read or written by
+    /// <see cref="ToDocument"/>/<see cref="LoadFromDocument"/>, exactly like <see cref="StatusPath"/>.
+    /// </summary>
+    public string? CurrentFilePath { get; set; }
+
+    /// <summary>
     /// Path to the live <c>Status.json</c> being polled for this session, or <see langword="null"/>
     /// until a telemetry reader (Phase 2+) assigns one. Reserved field: no Phase 1 rule reads or
     /// writes it, matching Python's <c>status_path</c> attribute, which <c>mapper_core.py</c>
@@ -226,6 +236,57 @@ public sealed class MapSession
     /// <summary>Appends a completed search-route point history entry.</summary>
     public void AddRouteHistory(RouteHistoryEntry entry) => _routeHistory.Add(entry);
 
+    /// <summary>
+    /// Replaces an existing deposit's editable fields (name/size/rig count) while preserving its
+    /// position, ported from <c>qt_map_operations.edit_deposit</c>'s <c>item.update(values)</c>
+    /// call, which never touches <c>x</c>/<c>y</c>/<c>lat</c>/<c>lon</c>.
+    /// </summary>
+    /// <returns><see langword="true"/> when a deposit with <paramref name="id"/> was found and replaced.</returns>
+    public bool UpdateDeposit(Guid id, string name, Enums.DepositSize size, int rigs)
+    {
+        int index = _deposits.FindIndex(deposit => deposit.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var existing = _deposits[index];
+        _deposits[index] = existing with { Name = name, Size = size, Rigs = rigs };
+        return true;
+    }
+
+    /// <summary>Removes the deposit with the given <paramref name="id"/>, ported from <c>qt_map_operations.delete_marker</c>'s deposit branch.</summary>
+    /// <returns><see langword="true"/> when a deposit with <paramref name="id"/> was found and removed.</returns>
+    public bool DeleteDeposit(Guid id) => _deposits.RemoveAll(deposit => deposit.Id == id) > 0;
+
+    /// <summary>Removes the rig with the given <paramref name="id"/>, ported from <c>qt_map_operations.delete_marker</c>'s rig branch.</summary>
+    /// <returns><see langword="true"/> when a rig with <paramref name="id"/> was found and removed.</returns>
+    public bool DeleteRig(Guid id) => _rigs.RemoveAll(rig => rig.Id == id) > 0;
+
+    /// <summary>
+    /// Replaces an existing mark's name and/or position, ported from
+    /// <c>qt_map_operations.alter_mark</c>. The caller (the <c>UpdateMark</c> Application
+    /// handler) is responsible for the "unchanged rounded azimuth/distance keeps the original
+    /// coordinates" rule — by that point the caller already knows whether to pass the mark's
+    /// existing or a freshly recomputed position.
+    /// </summary>
+    /// <returns><see langword="true"/> when a mark with <paramref name="id"/> was found and replaced.</returns>
+    public bool UpdateMark(Guid id, string name, double x, double y, double lat, double lon)
+    {
+        int index = _marks.FindIndex(mark => mark.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _marks[index] = new MapMark(id, name, x, y, lat, lon);
+        return true;
+    }
+
+    /// <summary>Removes the mark with the given <paramref name="id"/>, ported from <c>qt_map_operations.delete_marker</c>'s mark branch.</summary>
+    /// <returns><see langword="true"/> when a mark with <paramref name="id"/> was found and removed.</returns>
+    public bool DeleteMark(Guid id) => _marks.RemoveAll(mark => mark.Id == id) > 0;
+
     /// <summary>Clears the search-route point history, used when (re)starting a search route.</summary>
     public void ClearRouteHistory() => _routeHistory.Clear();
 
@@ -345,6 +406,30 @@ public sealed class MapSession
         ReturnToPause = false;
         ActiveNavTarget = null;
         NextTargetXy = null;
+    }
+
+    /// <summary>
+    /// Clears live-session telemetry without touching any persistent map data, ported from
+    /// <c>rhino_surface_mapper_qt.MapperWindow.set_offline</c>'s <see cref="MapSession"/>-facing
+    /// field resets (<c>state.in_srv</c>/<c>fuel_reservoir</c>/<c>fuel_percent</c>/<c>fuel_low</c>/
+    /// <c>rhino_lat</c>/<c>rhino_lon</c>/<c>rhino_heading</c>). Called when the game process stops
+    /// running, so the UI can show "no live telemetry" without discarding
+    /// <see cref="System"/>/<see cref="Body"/>/<see cref="BodyKey"/>/<see cref="PmlId"/>, the
+    /// recorded trail, or any deposits/rigs/marks — exactly as
+    /// <c>test_game_closing_clears_only_live_session_state</c> requires. The remaining fields
+    /// Python's <c>set_offline</c> resets (<c>status_valid</c>, <c>live_status</c>,
+    /// <c>transition_required</c>, <c>journal_identity</c>) are Application/Desktop-layer
+    /// concerns owned by <c>EvaluateTelemetryPoll</c>'s caller, not this type.
+    /// </summary>
+    public void SetOffline()
+    {
+        InSrv = false;
+        FuelReservoir = null;
+        FuelPercent = null;
+        FuelLow = false;
+        RhinoLat = null;
+        RhinoLon = null;
+        RhinoHeading = null;
     }
 
     /// <summary>
@@ -482,12 +567,27 @@ public sealed class MapSession
     }
 
     /// <summary>
+    /// Replaces every field of this instance with an already-prepared <paramref name="candidate"/>
+    /// session's, without re-validating a document. Ported from the same
+    /// <c>self.__dict__.update(candidate.__dict__)</c> swap <see cref="LoadFromDocument"/> uses,
+    /// exposed publicly for the Phase 4 map-lifecycle orchestration
+    /// (<c>Application.Services.MapTransitionCoordinator</c>), which prepares a fully-formed
+    /// detached candidate session (new PML, matched nearby PML, or a freshly loaded file) ahead
+    /// of time and only needs to install it into the single live <see cref="MapSession"/>
+    /// instance the Application layer's <c>IMapSessionStore</c> owns — mirroring Python's
+    /// <c>install_prepared_map</c>, which also assigns a whole new <c>MapperState</c> object
+    /// (<c>self.state = candidate</c>) rather than re-validating a document a second time.
+    /// </summary>
+    public void InstallFrom(MapSession candidate) => ReplaceFrom(candidate);
+
+    /// <summary>
     /// Replaces every field of this instance with the candidate's, ported from Python's
     /// <c>self.__dict__.update(candidate.__dict__)</c> swap at the end of <c>load</c>.
     /// </summary>
     private void ReplaceFrom(MapSession candidate)
     {
         StatusPath = candidate.StatusPath;
+        CurrentFilePath = candidate.CurrentFilePath;
         System = candidate.System;
         Body = candidate.Body;
         BodyKey = candidate.BodyKey;

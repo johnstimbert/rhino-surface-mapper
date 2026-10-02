@@ -130,6 +130,41 @@ public static class PlanetGeometry
     }
 
     /// <summary>
+    /// Projects a geographic destination point a given great-circle distance and initial bearing
+    /// from an origin latitude/longitude, ported from <c>qt_map_operations.mark_coordinates</c>'s
+    /// spherical direct-geodesic formula (the standard "destination point given distance and
+    /// bearing" solution). Used only where the Python UI itself used this formula — placing a
+    /// marker or a new PML centre relative to the current SRV position — which is deliberately a
+    /// different (more accurate, curvature-aware) calculation than <see cref="DestinationPoint"/>'s
+    /// flat local-projection offset used by the circular search route.
+    /// </summary>
+    /// <param name="originLat">Origin latitude in degrees.</param>
+    /// <param name="originLon">Origin longitude in degrees.</param>
+    /// <param name="radius">Planet radius in metres.</param>
+    /// <param name="bearingDegrees">Initial bearing in degrees, where 0 is north and values increase clockwise.</param>
+    /// <param name="distanceMetres">Great-circle distance in metres along that bearing.</param>
+    /// <returns>Destination geographic <c>(lat, lon)</c> in degrees, longitude normalised to <c>[-180, 180)</c>.</returns>
+    /// <remarks>
+    /// Operation order mirrors Python exactly, including the <c>max(-1, min(1, ...))</c> clamp on
+    /// <see cref="Math.Asin(double)"/>'s argument (guards a tiny floating-point overshoot past
+    /// ±1 for a distance at or beyond the antipode) and the <c>(degrees(dest_lam) + 180) % 360 - 180</c>
+    /// longitude normalisation, so results stay bit-identical rather than merely algebraically
+    /// equivalent to the Python implementation.
+    /// </remarks>
+    public static (double Lat, double Lon) GreatCircleDestination(double originLat, double originLon, double radius, double bearingDegrees, double distanceMetres)
+    {
+        double bearing = DegreesToRadians(bearingDegrees);
+        double arc = distanceMetres / radius;
+        double phi = DegreesToRadians(originLat);
+        double lambda = DegreesToRadians(originLon);
+        double destPhi = Math.Asin(Math.Max(-1.0, Math.Min(1.0, (Math.Sin(phi) * Math.Cos(arc)) + (Math.Cos(phi) * Math.Sin(arc) * Math.Cos(bearing)))));
+        double destLambda = lambda + Math.Atan2(Math.Sin(bearing) * Math.Sin(arc) * Math.Cos(phi), Math.Cos(arc) - (Math.Sin(phi) * Math.Sin(destPhi)));
+        double destinationLat = RadiansToDegrees(destPhi);
+        double destinationLon = Modulo(RadiansToDegrees(destLambda) + 180.0, 360.0) - 180.0;
+        return (destinationLat, destinationLon);
+    }
+
+    /// <summary>
     /// Converts degrees to radians, exposed publicly so callers that must build up an angle from
     /// several additive terms (for example <c>SearchRouteCalculator</c>'s per-point bearing) can
     /// replicate Python's exact operation order — <c>radians(a) + b</c>, not

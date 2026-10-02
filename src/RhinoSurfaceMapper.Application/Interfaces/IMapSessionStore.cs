@@ -46,6 +46,33 @@ public interface IMapSessionStore
     /// risk leaving the session in a state no caller ever intended.
     /// </param>
     Task MutateAsync(Action<MapSession> mutate, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs an asynchronous <paramref name="mutate"/> callback against the live
+    /// <see cref="MapSession"/> under the same mutation semaphore as
+    /// <see cref="MutateAsync(Action{MapSession}, CancellationToken)"/>, then atomically
+    /// publishes a fresh <see cref="Snapshot"/>.
+    /// </summary>
+    /// <remarks>
+    /// Added in Phase 4 for the save/load/map-transition flows (<c>MapSession.SaveMap</c>,
+    /// <c>ResolveUnsavedChanges</c>, <c>IMapTransitionCoordinator.TryResolveOldMapAsync</c>):
+    /// these need real <c>await</c>ed file I/O (<see cref="Domain.Interfaces.IMapRepository"/>)
+    /// performed while still holding the mutation gate, which the original synchronous
+    /// <see cref="Action{MapSession}"/> overload cannot express without either blocking on the
+    /// I/O synchronously inside the delegate or retaining the <see cref="MapSession"/> reference
+    /// beyond a call (both of which this type's original contract explicitly forbids). This
+    /// overload is strictly additive — <see cref="MutateAsync(Action{MapSession}, CancellationToken)"/>
+    /// is unchanged and remains the right choice for purely synchronous mutations.
+    /// </remarks>
+    /// <typeparam name="TResult">The type of value <paramref name="mutate"/> produces.</typeparam>
+    /// <param name="mutate">
+    /// An asynchronous callback that mutates the live session in place and returns a result.
+    /// Must not retain the <see cref="MapSession"/> instance it is given beyond the call, exactly
+    /// like the synchronous overload.
+    /// </param>
+    /// <param name="cancellationToken">Cancels waiting for the mutation semaphore and is forwarded to <paramref name="mutate"/>.</param>
+    /// <returns>The value <paramref name="mutate"/> produced.</returns>
+    Task<TResult> MutateAsync<TResult>(Func<MapSession, CancellationToken, Task<TResult>> mutate, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

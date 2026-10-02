@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RhinoSurfaceMapper.Application.Features.MapSession;
 using RhinoSurfaceMapper.Application.Interfaces;
+using RhinoSurfaceMapper.Application.Mediator;
 using RhinoSurfaceMapper.Domain.Entities;
 using RhinoSurfaceMapper.Domain.Interfaces;
 using RhinoSurfaceMapper.Domain.ValueObjects;
@@ -12,17 +14,18 @@ namespace RhinoSurfaceMapper.Desktop.Hosting;
 /// <summary>
 /// The 50 ms telemetry loop from the design's "Threading and concurrency model" table: reads
 /// <c>Status.json</c> when it changed, falls back to the Journal-derived system name when
-/// <c>Status.json</c> omits <c>StarSystem</c> (design requirement F2), applies the sample to the
-/// live <see cref="MapSession"/> through <see cref="IMapSessionStore"/>, and raises coalesced
-/// <see cref="IMapSessionNotifier"/> notifications. Read-only for this phase: no map save/open,
-/// no search route, no steering — those are later phases' hosted services.
+/// <c>Status.json</c> omits <c>StarSystem</c> (design requirement F2), and dispatches
+/// <see cref="EvaluateTelemetryPoll"/> through <see cref="IMediator"/> to apply the sample and
+/// drive the Phase 4 pending-transition/PML-activation state machine, raising coalesced
+/// <see cref="IMapSessionNotifier"/> notifications based on the outcome.
 /// </summary>
 /// <remarks>
 /// Ported, at the scope this phase needs, from the polling half of Python's
 /// <c>MapperWindow.poll</c>: the game-running gate, the <c>read_status_if_changed</c> call, and
-/// the "fill a missing <c>StarSystem</c> from the Journal" fallback. The later <c>poll</c> logic
-/// (map-reload guards, "Rhino on another body" messaging, map-open transitions) belongs to the
-/// map-operations feature (Phase 4) this phase deliberately does not implement.
+/// the "fill a missing <c>StarSystem</c> from the Journal" fallback. The map-reload guards,
+/// "Rhino on another body" messaging, and map-open transitions are now implemented by
+/// <see cref="EvaluateTelemetryPoll"/> and <c>IMapTransitionCoordinator</c> in the Application
+/// layer; this service only owns the read side of the loop and the notification gating.
 /// </remarks>
 public sealed class TelemetryHostedService : BackgroundService
 {
@@ -30,6 +33,8 @@ public sealed class TelemetryHostedService : BackgroundService
 
     private readonly IMapSessionStore _store;
     private readonly IMapSessionNotifier _notifier;
+    private readonly IMediator _mediator;
+    private readonly IMapTransitionCoordinator _coordinator;
     private readonly IStatusTelemetryReader _statusReader;
     private readonly IJournalIdentityReader _journalReader;
     private readonly IGameProcessCheck _gameProcessCheck;
@@ -47,6 +52,8 @@ public sealed class TelemetryHostedService : BackgroundService
     public TelemetryHostedService(
         IMapSessionStore store,
         IMapSessionNotifier notifier,
+        IMediator mediator,
+        IMapTransitionCoordinator coordinator,
         IStatusTelemetryReader statusReader,
         IJournalIdentityReader journalReader,
         IGameProcessCheck gameProcessCheck,
@@ -56,12 +63,26 @@ public sealed class TelemetryHostedService : BackgroundService
     {
         _store = store;
         _notifier = notifier;
+        _mediator = mediator;
+        _coordinator = coordinator;
         _statusReader = statusReader;
         _journalReader = journalReader;
         _gameProcessCheck = gameProcessCheck;
         _clock = clock;
         _logger = logger;
         _statusPath = options.Value.StatusPath ?? ResolveDefaultStatusPath();
+
+        // Ported from install_prepared_map's "map JSON does not contain the current Rhino
+        // presence or position; re-read immediately even if Status.json has not changed"
+        // handling (self.last_mtime = None; self.poll(reloading_map=True)): whenever a
+        // LoadMap/NewMap/PML-activation install swaps the live session for one whose telemetry
+        // fields are blank (a freshly loaded/validated document never carries live position,
+        // fuel or heading — see MapSession.ToDocument's remarks), the very next poll tick must
+        // treat Status.json as changed regardless of its actual mtime, so live telemetry is
+        // reapplied onto the newly-installed session immediately instead of waiting for the file
+        // to next change on disk (which, on an idle/unchanged Status.json, could otherwise never
+        // happen again until the next real in-game event).
+        _notifier.SessionChanged += (_, _) => _previousMtimeTicks = null;
     }
 
     /// <inheritdoc />
@@ -83,6 +104,7 @@ public sealed class TelemetryHostedService : BackgroundService
     private async Task PollOnceAsync(CancellationToken cancellationToken)
     {
         bool running = _gameProcessCheck.IsRunning();
+        bool justStoppedRunning = _lastGameRunning && !running;
         if (running != _lastGameRunning)
         {
             _lastGameRunning = running;
@@ -91,6 +113,11 @@ public sealed class TelemetryHostedService : BackgroundService
 
         if (!running)
         {
+            if (justStoppedRunning)
+            {
+                await GoOfflineAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -170,17 +197,45 @@ public sealed class TelemetryHostedService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Clears live-session telemetry and any pending map transition on the running→not-running
+    /// transition, ported from <c>MapperWindow.set_offline</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberate adaptation from Python:</b> Python's <c>set_offline</c> runs on every poll
+    /// tick while the game is not running (it is cheaply idempotent once already offline).
+    /// This port instead runs it exactly once, gated on the running→not-running transition
+    /// (<c>PollOnceAsync</c>'s <c>justStoppedRunning</c> check), to avoid acquiring the mutation
+    /// semaphore and raising a notification on every 50&#160;ms tick for however long the game
+    /// stays closed — the end state (live telemetry cleared, persistent map data untouched) is
+    /// identical either way, since nothing else can mutate <see cref="Domain.Entities.MapSession"/>
+    /// while the game is not running.
+    /// </remarks>
+    private async Task GoOfflineAsync(CancellationToken cancellationToken)
+    {
+        await _store.MutateAsync(session => session.SetOffline(), cancellationToken).ConfigureAwait(false);
+        _coordinator.Reset();
+        _journalReader.Reset();
+        _lastAppliedSampleStarSystemWasMissing = false;
+        _logger.TelemetryWentOffline();
+        _notifier.NotifySessionChanged();
+    }
+
     private async Task ApplySampleAsync(TelemetryStatusSample sample, CancellationToken cancellationToken)
     {
-        StatusUpdate update = StatusUpdate.Rejected;
-        await _store.MutateAsync(session => update = session.ProcessStatus(sample), cancellationToken).ConfigureAwait(false);
+        EvaluateTelemetryPoll.Response response = await _mediator
+            .SendCommandAsync<EvaluateTelemetryPoll.Command, EvaluateTelemetryPoll.Response>(
+                new EvaluateTelemetryPoll.Command { Sample = sample }, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (!update.Accepted)
+        if (response.Result == EvaluateTelemetryPoll.Result.Rejected)
         {
             return;
         }
 
         MapSessionSnapshot snapshot = _store.Snapshot;
+
+        bool locationChanged = response.Result is EvaluateTelemetryPoll.Result.TransitionPending or EvaluateTelemetryPoll.Result.Activated;
 
         // The scope dictionary and BeginScope call are real allocations on a hot 50 ms loop; the
         // only log emitted inside is Debug and the telemetry category defaults to Warning, so
@@ -195,17 +250,18 @@ public sealed class TelemetryHostedService : BackgroundService
                 ["generation"] = snapshot.MapGeneration,
             }))
             {
-                _logger.TelemetryStatusProcessed(update.System, update.Body, update.LocationChanged);
+                _logger.TelemetryStatusProcessed(snapshot.System, snapshot.Body, locationChanged);
             }
         }
 
         // Reserve the discrete TelemetryUpdated notification (and the StateHasChanged it drives
         // via MapScenePresenter) for genuinely discrete events — the first sample ever applied
-        // (no map yet -> live) or a body/system identity change (update.LocationChanged) —
+        // (no map yet -> live), a pending location transition, or a destination activation —
         // never for routine, continuous telemetry at up to 20 Hz. Continuous geometry is already
         // delivered every tick by MapScenePresenter's own timer-driven scene push, which does
-        // not call StateHasChanged.
-        bool isDiscreteTelemetryTransition = !_hasAppliedAnySample || update.LocationChanged;
+        // not call StateHasChanged. EvaluateTelemetryPoll's handler deliberately does not raise
+        // this notification itself for exactly this reason — see its XML remarks.
+        bool isDiscreteTelemetryTransition = !_hasAppliedAnySample || locationChanged;
         _hasAppliedAnySample = true;
         if (isDiscreteTelemetryTransition)
         {

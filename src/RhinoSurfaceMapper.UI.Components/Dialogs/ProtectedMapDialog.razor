@@ -1,0 +1,35 @@
+@* Surfaces the pending-transition's "what should happen to the previous map's unsaved changes"
+   prompt, ported from Python's prepare_to_replace_current_map dialog. Unlike the other dialogs
+   in this folder, this one is not opened by a toolbar button: it shows itself automatically
+   whenever IMapTransitionCoordinator.TransitionRequired is true and PendingOldMapResolved is not
+   yet true, exactly as Python's modal appears unprompted mid-poll. See the code-behind's remarks
+   for why this is a non-blocking gate rather than a blocking modal (decision ported from
+   MapTransitionCoordinator's own documented adaptation). *@
+@namespace RhinoSurfaceMapper.UI.Components.Dialogs
+@using RhinoSurfaceMapper.Application.Interfaces
+@implements IDisposable
+
+@if (_visible)
+{
+    <div class="dialog-backdrop">
+        <div class="dialog-box">
+            <h3>Leaving the current map</h3>
+            <p>
+                You've travelled away from the map that was open. What should happen to its
+                unsaved changes before the new location is opened?
+            </p>
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="dialog-error">@ErrorMessage</p>
+            }
+
+            <div class="dialog-actions">
+                <button type="button" @onclick="() => ResolveAsync(OldMapDisposition.Discard)" disabled="@_busy">Discard</button>
+                <button type="button" @onclick="() => ResolveAsync(OldMapDisposition.SaveReplace)" disabled="@_busy">Save (replace)</button>
+                <button type="button" @onclick="() => ResolveAsync(OldMapDisposition.SaveNewVersion)" disabled="@_busy">Save as new version</button>
+                <button type="button" @onclick="Dismiss" disabled="@_busy">Not now</button>
+            </div>
+        </div>
+    </div>
+}

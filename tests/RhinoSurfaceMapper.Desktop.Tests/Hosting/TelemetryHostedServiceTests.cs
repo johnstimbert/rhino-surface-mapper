@@ -1,9 +1,12 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using RhinoSurfaceMapper.Application;
 using RhinoSurfaceMapper.Application.Interfaces;
+using RhinoSurfaceMapper.Application.Mediator;
 using RhinoSurfaceMapper.Application.Services;
 using RhinoSurfaceMapper.Desktop.Hosting;
 using RhinoSurfaceMapper.Domain.Interfaces;
@@ -22,6 +25,49 @@ public sealed class TelemetryHostedServiceTests
 {
     private const long SrvFlag = 0x04000000;
 
+    /// <summary>
+    /// Builds a real <see cref="IMediator"/> wired through <c>AddApplication()</c> but sharing
+    /// this test's already-constructed <see cref="MapSessionStore"/>/<see cref="MapSessionNotifier"/>/
+    /// <see cref="IClock"/> instances, so assertions against those instances still observe the
+    /// effects of dispatching <c>EvaluateTelemetryPoll</c>. <see cref="IMapRepository"/> and
+    /// <see cref="IAppPaths"/> are only exercised by the pending-transition machinery, which
+    /// these loop-resilience tests never reach (no sample here changes system/body identity), so
+    /// bare mocks are sufficient.
+    /// </summary>
+    private static IMediator CreateMediator(MapSessionStore store, MapSessionNotifier notifier, IClock clock) =>
+        CreateMediator(store, notifier, clock, Mock.Of<IMapRepository>(), Mock.Of<IAppPaths>());
+
+    /// <summary>
+    /// Overload accepting a real/fake <see cref="IMapRepository"/>/<see cref="IAppPaths"/> pair,
+    /// for the three tests below that exercise the pending-transition machinery far enough to
+    /// reach <c>EvaluateTelemetryPoll.Result.TransitionPending</c>/<c>Activated</c>, which bare
+    /// mocks cannot satisfy (they need to actually load/save map files).
+    /// </summary>
+    private static IMediator CreateMediator(MapSessionStore store, MapSessionNotifier notifier, IClock clock, IMapRepository repository, IAppPaths appPaths) =>
+        BuildProvider(store, notifier, clock, repository, appPaths).GetRequiredService<IMediator>();
+
+    /// <summary>
+    /// Builds the same DI container <see cref="CreateMediator(MapSessionStore,MapSessionNotifier,IClock,IMapRepository,IAppPaths)"/>
+    /// resolves its <see cref="IMediator"/> from, so <see cref="CreateService"/> can also resolve
+    /// the exact same singleton <see cref="IMapTransitionCoordinator"/> instance the mediator's
+    /// <c>EvaluateTelemetryPoll</c> handler mutates — required since <see cref="TelemetryHostedService"/>
+    /// now calls <c>IMapTransitionCoordinator.Reset()</c> directly on the running→not-running
+    /// transition, and a second, independently-constructed coordinator instance would never see
+    /// that reset reflected in what the mediator observes (or vice versa).
+    /// </summary>
+    private static ServiceProvider BuildProvider(MapSessionStore store, MapSessionNotifier notifier, IClock clock, IMapRepository repository, IAppPaths appPaths)
+    {
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton<IMapSessionStore>(store);
+        services.AddSingleton<IMapSessionNotifier>(notifier);
+        services.AddSingleton(clock);
+        services.AddSingleton(repository);
+        services.AddSingleton(appPaths);
+        services.AddLogging();
+        return services.BuildServiceProvider();
+    }
+
     private static TelemetryHostedService CreateService(
         MapSessionStore store,
         MapSessionNotifier notifier,
@@ -29,16 +75,47 @@ public sealed class TelemetryHostedServiceTests
         Mock<IJournalIdentityReader> journalReader,
         Mock<IGameProcessCheck> gameProcessCheck,
         IClock clock,
-        FakeLogger<TelemetryHostedService> logger) =>
-        new(
+        FakeLogger<TelemetryHostedService> logger)
+    {
+        var provider = BuildProvider(store, notifier, clock, Mock.Of<IMapRepository>(), Mock.Of<IAppPaths>());
+        return new(
             store,
             notifier,
+            provider.GetRequiredService<IMediator>(),
+            provider.GetRequiredService<IMapTransitionCoordinator>(),
             statusReader.Object,
             journalReader.Object,
             gameProcessCheck.Object,
             clock,
             Options.Create(new TelemetryOptions { StatusPath = "unused-mocked-path" }),
             logger);
+    }
+
+    /// <summary>Overload used by the Result-dispatch tests below, wiring a real/fake <see cref="IMapRepository"/>/<see cref="IAppPaths"/> pair through the mediator.</summary>
+    private static TelemetryHostedService CreateService(
+        MapSessionStore store,
+        MapSessionNotifier notifier,
+        Mock<IStatusTelemetryReader> statusReader,
+        Mock<IJournalIdentityReader> journalReader,
+        Mock<IGameProcessCheck> gameProcessCheck,
+        IClock clock,
+        FakeLogger<TelemetryHostedService> logger,
+        IMapRepository repository,
+        IAppPaths appPaths)
+    {
+        var provider = BuildProvider(store, notifier, clock, repository, appPaths);
+        return new(
+            store,
+            notifier,
+            provider.GetRequiredService<IMediator>(),
+            provider.GetRequiredService<IMapTransitionCoordinator>(),
+            statusReader.Object,
+            journalReader.Object,
+            gameProcessCheck.Object,
+            clock,
+            Options.Create(new TelemetryOptions { StatusPath = "unused-mocked-path" }),
+            logger);
+    }
 
     private static Mock<IGameProcessCheck> GameAlwaysRunning()
     {
@@ -47,10 +124,10 @@ public sealed class TelemetryHostedServiceTests
         return mock;
     }
 
-    private static string ValidStatusJson(string? starSystem = "Col 123 Sector", string bodyName = "A 1") =>
+    private static string ValidStatusJson(string? starSystem = "Col 123 Sector", string bodyName = "A 1", long flags = SrvFlag) =>
         $$"""
         {
-            "Flags": {{SrvFlag}},
+            "Flags": {{flags}},
             "Latitude": 10.0,
             "Longitude": 20.0,
             "StarSystem": {{(starSystem is null ? "null" : $"\"{starSystem}\"")}},
@@ -116,6 +193,60 @@ public sealed class TelemetryHostedServiceTests
         statusReader.Verify(r => r.TryReadIfChanged(It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<bool>()), Times.Never,
             "Status.json must not be polled at all while the game process is not running");
         store.Snapshot.Should().BeSameAs(MapSessionSnapshot.Empty);
+    }
+
+    /// <summary>
+    /// Ports <c>test_game_closing_clears_only_live_session_state</c> end-to-end through the real
+    /// poll loop: once accepted telemetry has established live SRV state, the game process
+    /// stopping must clear every live-telemetry field (<c>InSrv</c>, Rhino lat/lon) on the
+    /// running→not-running transition — exactly once, not on every subsequent tick while still
+    /// offline — while the persistent map identity (<c>System</c>/<c>Body</c>) survives
+    /// untouched. Also asserts the journal-identity reader's <c>Reset()</c> is invoked exactly
+    /// once, proving <see cref="TelemetryHostedService"/>'s new offline path (not just
+    /// <see cref="RhinoSurfaceMapper.Domain.Entities.MapSession.SetOffline"/> in isolation) is
+    /// wired end-to-end.
+    /// </summary>
+    [Fact]
+    public async Task PollOnceAsync_clears_live_telemetry_once_on_the_running_to_not_running_transition_while_preserving_persistent_map_data()
+    {
+        var store = new MapSessionStore();
+        var notifier = new MapSessionNotifier();
+        var statusReader = new Mock<IStatusTelemetryReader>();
+        statusReader.Setup(r => r.TryReadIfChanged(It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<bool>()))
+            .Returns(() => new StatusReadResult(DateTime.UtcNow.Ticks, JsonDocument.Parse(ValidStatusJson())));
+        var journalReader = new Mock<IJournalIdentityReader>();
+        journalReader.Setup(j => j.CurrentIdentity()).Returns((JournalIdentity?)null);
+
+        int runningCalls = 0;
+        var gameProcessCheck = new Mock<IGameProcessCheck>();
+
+        // Running for the first few ticks (long enough for at least one sample to be applied and
+        // observed below), then permanently not running for the remainder of the test.
+        gameProcessCheck.Setup(g => g.IsRunning()).Returns(() => Interlocked.Increment(ref runningCalls) <= 3);
+        var logger = new FakeLogger<TelemetryHostedService>();
+
+        var service = CreateService(store, notifier, statusReader, journalReader, gameProcessCheck, new FakeClock(), logger);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(160); // several ticks while running, enough to apply at least one sample.
+
+        store.Snapshot.InSrv.Should().BeTrue("the applied sample must have set live SRV state while the game was running");
+        store.Snapshot.System.Should().Be("Col 123 Sector");
+        store.Snapshot.Body.Should().Be("A 1");
+
+        await Task.Delay(300); // runs past the running->not-running transition and several offline ticks.
+        await service.StopAsync(CancellationToken.None);
+
+        store.Snapshot.InSrv.Should().BeFalse("SetOffline must clear InSrv once the game stops running");
+        store.Snapshot.RhinoLat.Should().BeNull("SetOffline must clear live Rhino position once the game stops running");
+        store.Snapshot.RhinoLon.Should().BeNull("SetOffline must clear live Rhino position once the game stops running");
+        store.Snapshot.System.Should().Be("Col 123 Sector", "persistent map identity must survive a game-stop, matching Python's set_offline contract");
+        store.Snapshot.Body.Should().Be("A 1", "persistent map identity must survive a game-stop, matching Python's set_offline contract");
+
+        journalReader.Verify(j => j.Reset(), Times.Once,
+            "the journal identity reader must be reset exactly once on the transition, not on every offline tick");
+        logger.Entries.Count(e => e.Message.Contains("cleared live telemetry", StringComparison.OrdinalIgnoreCase)).Should().Be(1,
+            "the offline transition must be logged exactly once, not once per tick while the game stays closed");
     }
 
     [Fact]
@@ -380,5 +511,248 @@ public sealed class TelemetryHostedServiceTests
             "once a prior sample's StarSystem was missing and the Journal identity resolves while Status.json is unchanged, the next poll must force a re-read instead of waiting for the file to change again");
         store.Snapshot.System.Should().Be("Journal System",
             "the forced re-read must self-heal StarSystem on the very tick the Journal identity became available, matching Python's immediate correction");
+    }
+
+    /// <summary>
+    /// Regression test for a Phase 4 gap ported from Python's <c>test_load_rereads_unchanged_status_immediately</c>:
+    /// <c>install_prepared_map</c> forces <c>self.last_mtime = None</c> and an immediate
+    /// <c>poll(reloading_map=True)</c> after installing a freshly loaded/activated map, because
+    /// map JSON never carries live telemetry (position/heading/fuel) and the commander could
+    /// otherwise be shown as "not present" until Status.json next happens to change on disk. This
+    /// service's equivalent is resetting <c>_previousMtimeTicks</c> whenever
+    /// <see cref="IMapSessionNotifier.SessionChanged"/> fires (raised by <c>LoadMap</c>,
+    /// <c>NewMap</c> and PML activation alike), so the very next tick re-reads and reapplies
+    /// telemetry onto the newly-installed session even though the file's bytes/mtime never
+    /// changed.
+    /// </summary>
+    [Fact]
+    public async Task ApplySampleAsync_forces_an_immediate_reread_after_a_session_changed_notification_even_when_the_file_is_unchanged()
+    {
+        var store = new MapSessionStore();
+        var notifier = new MapSessionNotifier();
+        const long fixedMtime = 987_654_321L;
+
+        var statusReader = new Mock<IStatusTelemetryReader>();
+        int callCountWithNoPreviousMtime = 0;
+        statusReader
+            .Setup(r => r.TryReadIfChanged(It.IsAny<string>(), null, It.IsAny<bool>()))
+            .Returns(() =>
+            {
+                callCountWithNoPreviousMtime++;
+                return new StatusReadResult(fixedMtime, JsonDocument.Parse(ValidStatusJson(starSystem: "Rediscovered")));
+            });
+        statusReader
+            .Setup(r => r.TryReadIfChanged(It.IsAny<string>(), fixedMtime, It.IsAny<bool>()))
+            .Returns((StatusReadResult?)null); // Unchanged on every later tick once last_mtime is set.
+
+        var journalReader = new Mock<IJournalIdentityReader>();
+        journalReader.Setup(j => j.CurrentIdentity()).Returns((JournalIdentity?)null);
+        var gameProcessCheck = GameAlwaysRunning();
+        var logger = new FakeLogger<TelemetryHostedService>();
+
+        var service = CreateService(store, notifier, statusReader, journalReader, gameProcessCheck, new FakeClock(), logger);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(200); // Let the loop fully stabilize: the very first established sample itself raises one
+                                // SessionChanged notification (new map bootstrap), which this fix's subscription also
+                                // treats as a reason to force one further immediate re-read — both settle out quickly.
+        store.Snapshot.System.Should().Be("Rediscovered");
+        int baselineCallCount = callCountWithNoPreviousMtime;
+        baselineCallCount.Should().BeGreaterThanOrEqualTo(1);
+
+        // Simulate a LoadMap/NewMap/PML-activation install well after the loop has settled: raise
+        // SessionChanged without the underlying file itself changing at all.
+        notifier.NotifySessionChanged();
+
+        await Task.Delay(150); // Give the loop a further tick to observe the forced re-read.
+        await service.StopAsync(CancellationToken.None);
+
+        callCountWithNoPreviousMtime.Should().BeGreaterThan(baselineCallCount,
+            "a SessionChanged notification must force the next tick to re-read Status.json as if no previous mtime were known, " +
+            "instead of waiting for the file's own mtime to change, so telemetry is reapplied onto the newly-installed session immediately");
+    }
+
+    /// <summary>
+    /// <c>EvaluateTelemetryPoll.Result.Rejected</c> (a non-SRV sample) must raise neither
+    /// notification and must not touch the live session at all, through the real mediator
+    /// dispatch path rather than a stubbed response.
+    /// </summary>
+    [Fact]
+    public async Task ApplySampleAsync_raises_no_notifications_and_leaves_the_session_untouched_when_the_result_is_Rejected()
+    {
+        var store = new MapSessionStore();
+        var notifier = new MapSessionNotifier();
+        int telemetryUpdatedCount = 0, sessionChangedCount = 0;
+        notifier.TelemetryUpdated += (_, _) => telemetryUpdatedCount++;
+        notifier.SessionChanged += (_, _) => sessionChangedCount++;
+
+        var statusReader = new Mock<IStatusTelemetryReader>();
+        statusReader.Setup(r => r.TryReadIfChanged(It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<bool>()))
+            .Returns(() => new StatusReadResult(DateTime.UtcNow.Ticks, JsonDocument.Parse(ValidStatusJson(flags: 0)))); // No SRV bit set.
+        var journalReader = new Mock<IJournalIdentityReader>();
+        journalReader.Setup(j => j.CurrentIdentity()).Returns((JournalIdentity?)null);
+        var gameProcessCheck = GameAlwaysRunning();
+        var logger = new FakeLogger<TelemetryHostedService>();
+
+        var service = CreateService(store, notifier, statusReader, journalReader, gameProcessCheck, new FakeClock(), logger);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(200);
+        await service.StopAsync(CancellationToken.None);
+
+        telemetryUpdatedCount.Should().Be(0, "a rejected (non-SRV) sample must never raise the discrete telemetry notification");
+        sessionChangedCount.Should().Be(0, "a rejected sample must never raise the session-changed notification");
+        store.Snapshot.MapGeneration.Should().Be(0, "a rejected sample must never establish a map");
+        store.Snapshot.System.Should().BeEmpty("a rejected sample must leave the live session completely untouched");
+        store.Snapshot.RhinoLat.Should().BeNull("a rejected sample must never record a position");
+        store.Snapshot.InSrv.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// <c>EvaluateTelemetryPoll.Result.TransitionPending</c>: a location-changing sample for an
+    /// already-identified, writable map with unsaved changes (no disposition recorded yet) must
+    /// raise the discrete telemetry notification (a location change is itself discrete) but must
+    /// NOT raise the session-changed notification and must NOT touch the still-live old map,
+    /// since nothing has been installed yet.
+    /// </summary>
+    [Fact]
+    public async Task ApplySampleAsync_raises_TelemetryUpdated_but_not_SessionChanged_and_preserves_the_old_map_when_the_result_is_TransitionPending()
+    {
+        var store = new MapSessionStore();
+        var notifier = new MapSessionNotifier();
+        int telemetryUpdatedCount = 0, sessionChangedCount = 0;
+        notifier.TelemetryUpdated += (_, _) => telemetryUpdatedCount++;
+        notifier.SessionChanged += (_, _) => sessionChangedCount++;
+
+        // Pre-seed an already-identified, writable old map (PmlId + CurrentFilePath both set)
+        // before the service ever starts, so every tick reports the same mismatched sample and
+        // there is no race between establishing the old map and making it "identified and
+        // writable" partway through polling.
+        await store.MutateAsync(session =>
+        {
+            session.ProcessStatus(new Domain.ValueObjects.TelemetryStatusSample(SrvFlag, null, 0, 38, -9, "Sol", "Earth", 1_000_000.0, 1000.0));
+            session.PmlId = "6";
+            session.CurrentFilePath = "existing-old-map.json";
+        });
+
+        var statusReader = new Mock<IStatusTelemetryReader>();
+        statusReader.Setup(r => r.TryReadIfChanged(It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<bool>()))
+            .Returns(() => new StatusReadResult(DateTime.UtcNow.Ticks, JsonDocument.Parse(ValidStatusJson(starSystem: "Wytheville", bodyName: "New Body"))));
+        var journalReader = new Mock<IJournalIdentityReader>();
+        journalReader.Setup(j => j.CurrentIdentity()).Returns((JournalIdentity?)null);
+        var gameProcessCheck = GameAlwaysRunning();
+        var logger = new FakeLogger<TelemetryHostedService>();
+        var repository = new FakeMapRepository();
+        var appPaths = new FakeAppPaths();
+
+        var service = CreateService(store, notifier, statusReader, journalReader, gameProcessCheck, new FakeClock(), logger, repository, appPaths);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(250); // Several ticks, all reporting the same mismatched Wytheville/New Body sample; the
+                                // transition can never resolve (no disposition is ever recorded), so it stays gated
+                                // on every single tick for as long as the loop runs.
+        await service.StopAsync(CancellationToken.None);
+
+        telemetryUpdatedCount.Should().BeGreaterThan(0, "a location-changing sample is itself a discrete transition, even while only pending");
+        sessionChangedCount.Should().Be(1,
+            "the only session-changed notification must be the one-time bootstrap of the pre-seeded old map itself; " +
+            "nothing has been installed for the pending transition, so no further notification must ever fire while gated");
+        store.Snapshot.System.Should().Be("Sol", "the still-live old map must be completely untouched while the transition is only pending");
+        repository.SavedPaths.Should().BeEmpty("resolving/preparing must not happen at all without a recorded disposition for an identified, writable old map");
+    }
+
+    /// <summary>
+    /// <c>EvaluateTelemetryPoll.Result.Activated</c>: a location-changing sample for an
+    /// already-identified but read-only (protected) old map resolves for free, finds no nearby
+    /// PML and so prepares/activates a brand-new one in a single tick, raising both the discrete
+    /// telemetry notification and the session-changed notification and swapping the live session
+    /// over to the new map.
+    /// </summary>
+    [Fact]
+    public async Task ApplySampleAsync_raises_both_notifications_and_installs_the_new_map_when_the_result_is_Activated()
+    {
+        var store = new MapSessionStore();
+        var notifier = new MapSessionNotifier();
+        int telemetryUpdatedCount = 0, sessionChangedCount = 0;
+        notifier.TelemetryUpdated += (_, _) => telemetryUpdatedCount++;
+        notifier.SessionChanged += (_, _) => sessionChangedCount++;
+
+        await store.MutateAsync(session =>
+        {
+            session.ProcessStatus(new Domain.ValueObjects.TelemetryStatusSample(SrvFlag, null, 0, 38, -9, "Sol", "Earth", 1_000_000.0, 1000.0));
+            session.PmlId = "6";
+            session.Protected = true; // Read-only: the old map resolves for free, no disposition needed.
+        });
+
+        var statusReader = new Mock<IStatusTelemetryReader>();
+        statusReader.Setup(r => r.TryReadIfChanged(It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<bool>()))
+            .Returns(() => new StatusReadResult(DateTime.UtcNow.Ticks, JsonDocument.Parse(ValidStatusJson(starSystem: "Wytheville", bodyName: "New Body"))));
+        var journalReader = new Mock<IJournalIdentityReader>();
+        journalReader.Setup(j => j.CurrentIdentity()).Returns((JournalIdentity?)null);
+        var gameProcessCheck = GameAlwaysRunning();
+        var logger = new FakeLogger<TelemetryHostedService>();
+        var repository = new FakeMapRepository();
+        var appPaths = new FakeAppPaths();
+
+        var service = CreateService(store, notifier, statusReader, journalReader, gameProcessCheck, new FakeClock(), logger, repository, appPaths);
+
+        await service.StartAsync(CancellationToken.None);
+        await Task.Delay(200);
+        await service.StopAsync(CancellationToken.None);
+
+        telemetryUpdatedCount.Should().BeGreaterThan(0, "an activation is itself a discrete transition");
+        sessionChangedCount.Should().BeGreaterThan(0, "EvaluateTelemetryPoll explicitly notifies session-changed once a destination is actually installed");
+        store.Snapshot.System.Should().Be("Wytheville", "the new destination must have been installed as the live map");
+        repository.SavedPaths.Should().ContainSingle("a brand-new PML with no nearby match must be saved exactly once during preparation");
+    }
+
+    private sealed class FakeAppPaths : IAppPaths
+    {
+        public string BaseDirectory { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rsm-desktop-tests-" + Guid.NewGuid());
+        public string MapsDirectory => System.IO.Path.Combine(BaseDirectory, "MAPAS");
+        public string OptionsPath => System.IO.Path.Combine(BaseDirectory, "options.json");
+        public string LogsDirectory => System.IO.Path.Combine(BaseDirectory, "logs");
+    }
+
+    private sealed class FakeMapRepository : IMapRepository
+    {
+        private readonly Dictionary<string, Domain.Entities.MapSession> _files = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _savedPaths = [];
+
+        public IReadOnlyList<string> SavedPaths => _savedPaths;
+
+        public Task<Domain.Entities.MapSession> LoadAsync(string path, CancellationToken ct = default)
+        {
+            if (!_files.TryGetValue(path, out var session))
+            {
+                throw new FileNotFoundException(path);
+            }
+
+            var copy = new Domain.Entities.MapSession();
+            copy.LoadFromDocument(session.ToDocument());
+            return Task.FromResult(copy);
+        }
+
+        public Task SaveAsync(Domain.Entities.MapSession session, string path, bool updateSavedAt = true, CancellationToken ct = default)
+        {
+            var copy = new Domain.Entities.MapSession();
+            copy.LoadFromDocument(session.ToDocument());
+            _files[path] = copy;
+            _savedPaths.Add(path);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> IsProtectedAsync(string path, CancellationToken ct = default) => Task.FromResult(false);
+
+        public Task SetFlagsAsync(string path, bool favorite, bool protectedFlag, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<(string CreatedAt, string LastSavedAt)> ReadTimestampsAsync(string path, CancellationToken ct = default) =>
+            Task.FromResult((_files[path].CreatedAt ?? string.Empty, _files[path].LastSavedAt ?? string.Empty));
+
+        public IReadOnlyList<string> EnumerateMaps(string systemName) =>
+            _files.Keys.Where(path => System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path)) == systemName).ToList();
+
+        public IReadOnlyList<string> EnumerateSystems() =>
+            _files.Keys.Select(path => System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path))!).Distinct().ToList();
     }
 }
