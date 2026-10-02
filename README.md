@@ -52,6 +52,9 @@ The interface supports English and Portuguese (Portugal). Language changes apply
 
 ## Development
 
+The original application lives in [`python/`](python) and is being ported to .NET
+(Clean Architecture, Blazor Hybrid UI); see the design document in [`docs/design/`](docs/design).
+
 Rhino Surface Mapper is written in Python. Its desktop interface uses PySide6 and Qt, with selected static layouts defined in Qt Designer `.ui` files to make visual UI work easier while application behaviour and state remain in Python. The codebase separates presentation, mapping and domain logic, Elite Dangerous telemetry, and persistence and I/O. Automated tests use pytest.
 
 Useful contribution areas include UI/UX, mapping and navigation, Elite Dangerous telemetry, translations and documentation, testing, and future Surface Mining and Powerplay functionality. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidance and contribution information.

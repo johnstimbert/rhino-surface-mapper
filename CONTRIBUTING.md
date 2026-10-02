@@ -9,12 +9,18 @@ for reproducible bugs, feature ideas, and questions. Pull requests should
 explain the user-visible change and include focused tests when behaviour is
 changed.
 
-## Development
+## Repository layout
 
-Use the existing project virtual environment and install the development
-requirements from the repository root:
+The original Python/PySide6 application lives in [`python/`](python). The .NET
+port lives in `src/` and `tests/` at the repository root.
+
+## Development (Python application)
+
+Use the project virtual environment and install the development requirements
+from the `python/` directory:
 
 ```powershell
+cd python
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .venv\Scripts\python.exe -m pytest tests -ra
 ```

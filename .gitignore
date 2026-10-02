@@ -19,3 +19,9 @@ options.json
 
 backups/
 archive/
+.github/copilot-instructions.md
+.github/agents/dotnet-code-reviewer.agent.md
+.github/agents/dotnet-design-architect.agent.md
+.github/agents/dotnet-implementer.agent.md
+.github/agents/dotnet-technical-writer.agent.md
+.github/agents/dotnet-unit-test-engineer.agent.md
