@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RhinoSurfaceMapper.Domain\RhinoSurfaceMapper.Domain.csproj" />
+    <ProjectReference Include="..\RhinoSurfaceMapper.Application\RhinoSurfaceMapper.Application.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,9 +1,14 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RhinoSurfaceMapper.Application.Interfaces;
 using RhinoSurfaceMapper.Domain.Interfaces;
 using RhinoSurfaceMapper.Infrastructure.Logging;
+using RhinoSurfaceMapper.Infrastructure.Migration;
 using RhinoSurfaceMapper.Infrastructure.Paths;
+using RhinoSurfaceMapper.Infrastructure.Persistence;
+using RhinoSurfaceMapper.Infrastructure.Telemetry;
 using RhinoSurfaceMapper.Infrastructure.Time;
 
 namespace RhinoSurfaceMapper.Infrastructure;
@@ -14,8 +19,10 @@ namespace RhinoSurfaceMapper.Infrastructure;
 public static class ConfigureServices
 {
     /// <summary>
-    /// Registers <see cref="IClock"/>, <see cref="IAppPaths"/> and the rolling-file logging
-    /// provider (via <see cref="AddInfrastructureLogging"/>) into the DI container.
+    /// Registers <see cref="IClock"/>, <see cref="IAppPaths"/>, the rolling-file logging
+    /// provider (via <see cref="AddInfrastructureLogging"/>), the JSON persistence
+    /// repositories, the telemetry readers, and the decision-D7 legacy-map migration hosted
+    /// service into the DI container.
     /// </summary>
     /// <param name="services">The service collection to register services into.</param>
     /// <param name="configuration">Application configuration, used to bind the <c>Logging</c> section.</param>
@@ -26,6 +33,28 @@ public static class ConfigureServices
         services.AddSingleton<IAppPaths, AppPaths>();
 
         services.AddInfrastructureLogging(configuration);
+
+        // Registered as both its concrete type and IMapRepository, resolving to the same
+        // instance per scope: LegacyMapMigrationService needs the concrete type to reach
+        // LoadWithLegacyLiteralInfoAsync (not part of the frozen IMapRepository contract),
+        // while every other consumer depends on the interface only. Singleton because the
+        // repository itself is stateless (its dependencies, IAppPaths/IClock, are singletons
+        // too) and a hosted service resolves it once from the root provider.
+        services.AddSingleton<JsonMapRepository>();
+        services.AddSingleton<IMapRepository>(sp => sp.GetRequiredService<JsonMapRepository>());
+
+        services.AddSingleton<IPreferencesRepository, JsonPreferencesRepository>();
+
+        // Both readers are effectively stateless/single-poller-owned (JournalIdentityReader
+        // carries its own read-position state across calls), so a singleton lifetime matches
+        // their intended usage from a single telemetry polling loop in a later phase.
+        services.AddSingleton<IStatusTelemetryReader, StatusFileReader>();
+        services.AddSingleton<IJournalIdentityReader, JournalIdentityReader>();
+
+        // Decision D7: must run, and complete, before any later-phase hosted service that reads
+        // map files for telemetry/radar/steering — registered first so that ordering holds once
+        // those services exist; IHostedService instances start in registration order.
+        services.AddHostedService<LegacyMapMigrationService>();
 
         return services;
     }

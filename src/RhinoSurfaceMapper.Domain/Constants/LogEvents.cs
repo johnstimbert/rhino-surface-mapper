@@ -59,4 +59,34 @@ public static class LogEvents
     /// writer loop (AGENTS.md §6 waiver — see <c>RollingFileLoggerProvider.WriteLoopAsync</c>).
     /// </summary>
     public const int LogEntryCorrupted = 1006;
+
+    /// <summary>
+    /// <c>Infrastructure.Migration.LegacyMapMigrationService</c>
+    /// rewrote one map file because it found a legacy Portuguese deposit-size literal
+    /// (decision D7) — logged once per migrated file, at <c>Information</c>.
+    /// </summary>
+    public const int LegacyMapMigrated = 1007;
+
+    /// <summary>
+    /// <c>Infrastructure.Migration.LegacyMapMigrationService</c>
+    /// failed to migrate one map file — logged at <c>Warning</c>; the pass continues with the
+    /// remaining files.
+    /// </summary>
+    public const int LegacyMapMigrationFailed = 1008;
+
+    /// <summary>
+    /// <c>Infrastructure.Migration.LegacyMapMigrationService</c>
+    /// completed its startup pass — logged once, at <c>Information</c>, with the migrated/total
+    /// map counts.
+    /// </summary>
+    public const int LegacyMapMigrationCompleted = 1009;
+
+    /// <summary>
+    /// <c>Infrastructure.Telemetry.JournalIdentityReader</c> skipped
+    /// one Journal line because it was not valid UTF-8/JSON, was not a JSON object, or carried
+    /// no usable <c>StarSystem</c> — logged at <c>Debug</c>, never higher, since isolated
+    /// malformed lines are routine (a mid-write flush, an unrelated event shape) rather than an
+    /// error condition.
+    /// </summary>
+    public const int JournalRecordSkipped = 2000;
 }

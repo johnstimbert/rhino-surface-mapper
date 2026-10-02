@@ -102,7 +102,7 @@ rhino-surface-mapper/
 ```
 Domain              → (no project references)
 Application         → Domain
-Infrastructure      → Domain
+Infrastructure      → Domain, Application (interfaces only — IStatusTelemetryReader, IJournalIdentityReader; no cycle since Application → Domain only)
 Platform.Windows    → Application (interfaces only), Domain
 UI.Components       → Application, Domain
 Desktop             → all of the above
