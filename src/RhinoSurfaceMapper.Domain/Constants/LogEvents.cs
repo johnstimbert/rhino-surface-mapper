@@ -89,4 +89,45 @@ public static class LogEvents
     /// error condition.
     /// </summary>
     public const int JournalRecordSkipped = 2000;
+
+    /// <summary>
+    /// <c>Desktop.Hosting.TelemetryHostedService</c> applied one accepted telemetry sample to
+    /// the live <c>MapSession</c> — logged at <c>Debug</c> (the telemetry category defaults to
+    /// <c>Warning</c>, so this is silent unless a user raises it while diagnosing a problem).
+    /// </summary>
+    public const int TelemetryStatusProcessed = 2001;
+
+    /// <summary>
+    /// <c>Desktop.Hosting.TelemetryHostedService</c> failed to read or parse
+    /// <c>Status.json</c> on one poll — logged at <c>Warning</c>; the loop retries on the next
+    /// tick rather than stopping.
+    /// </summary>
+    public const int TelemetryStatusReadFailed = 2002;
+
+    /// <summary>
+    /// <c>Desktop.Hosting.EliteDangerousProcessCheck</c> observed the game process
+    /// start or stop running — logged at <c>Information</c> only on the transition, never on
+    /// every throttled check.
+    /// </summary>
+    public const int TelemetryGameProcessStateChanged = 2003;
+
+    /// <summary>
+    /// <c>Desktop.Hosting.TelemetryHostedService</c> caught an exception from applying an
+    /// accepted sample to the live <c>MapSession</c> (a domain invariant violation) or from a
+    /// notifier subscriber — logged at <c>Error</c>; the poll loop itself survives and retries
+    /// on the next tick.
+    /// </summary>
+    public const int TelemetryApplyFailed = 2004;
+
+    /// <summary>
+    /// <c>UI.Components.Map.MapCanvas</c> finished creating its JavaScript interop module and
+    /// is ready to push scenes — logged at <c>Debug</c>.
+    /// </summary>
+    public const int MapCanvasInitialized = 8000;
+
+    /// <summary>
+    /// <c>UI.Components.Map.MapCanvas</c>'s JS interop call failed (for example, the WebView2
+    /// module was disposed concurrently with a pending push) — logged at <c>Error</c>.
+    /// </summary>
+    public const int MapCanvasInteropFailed = 8001;
 }

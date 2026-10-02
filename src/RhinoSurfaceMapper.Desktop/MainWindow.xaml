@@ -4,9 +4,15 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:RhinoSurfaceMapper.Desktop"
+        xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
+        xmlns:layout="clr-namespace:RhinoSurfaceMapper.UI.Components.Layout;assembly=RhinoSurfaceMapper.UI.Components"
         mc:Ignorable="d"
-        Title="Rhino Surface Mapper" Height="450" Width="800">
+        Title="Rhino Surface Mapper" Height="720" Width="1280">
     <Grid>
-
+        <blazor:BlazorWebView x:Name="MapWebView" HostPage="wwwroot/index.html">
+            <blazor:BlazorWebView.RootComponents>
+                <blazor:RootComponent Selector="#app" ComponentType="{x:Type layout:Routes}" />
+            </blazor:BlazorWebView.RootComponents>
+        </blazor:BlazorWebView>
     </Grid>
 </Window>

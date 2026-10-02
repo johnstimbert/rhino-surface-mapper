@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- RhinoSurfaceMapper.Desktop is a WPF (net10.0-windows, UseWPF) WinExe; a project reference
+       to it from a plain net10.0 test project still resolves and builds fine on the Windows
+       build agents this solution targets, but since Desktop pulls in WPF/WindowsDesktop
+       framework references transitively, this test project targets net10.0-windows too so the
+       reference and its transitive assets resolve exactly the same way Desktop itself does.
+       CS1591 is kept as a warning (test projects carry no public API surface to document). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture" Version="4.18.1" />
+    <PackageReference Include="AutoFixture.Xunit2" Version="4.18.1" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Moq" Version="4.20.70" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RhinoSurfaceMapper.Desktop\RhinoSurfaceMapper.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\RhinoSurfaceMapper.Application\RhinoSurfaceMapper.Application.csproj" />
+    <ProjectReference Include="..\..\src\RhinoSurfaceMapper.Domain\RhinoSurfaceMapper.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

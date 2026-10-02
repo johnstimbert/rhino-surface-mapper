@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhinoSurfaceMapper.Platform
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhinoSurfaceMapper.UI.Components.Tests", "tests\RhinoSurfaceMapper.UI.Components.Tests\RhinoSurfaceMapper.UI.Components.Tests.csproj", "{0025116C-8065-422B-A6D6-79DB29CA357A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RhinoSurfaceMapper.Desktop.Tests", "tests\RhinoSurfaceMapper.Desktop.Tests\RhinoSurfaceMapper.Desktop.Tests.csproj", "{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -171,6 +173,18 @@ Global
 		{0025116C-8065-422B-A6D6-79DB29CA357A}.Release|x64.Build.0 = Release|Any CPU
 		{0025116C-8065-422B-A6D6-79DB29CA357A}.Release|x86.ActiveCfg = Release|Any CPU
 		{0025116C-8065-422B-A6D6-79DB29CA357A}.Release|x86.Build.0 = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|x64.Build.0 = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Debug|x86.Build.0 = Debug|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|Any CPU.Build.0 = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|x64.ActiveCfg = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|x64.Build.0 = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|x86.ActiveCfg = Release|Any CPU
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -187,5 +201,6 @@ Global
 		{960E71BC-A840-4BDF-9629-5B9E8F6A3285} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{7F485432-621C-4EF9-927F-57621A34A147} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{0025116C-8065-422B-A6D6-79DB29CA357A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{05976BC0-F5C4-4EDC-8EB9-0FDAB8A24020} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

@@ -1,4 +1,10 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
+
+// Exposes internal hosted-service/mapper types (StatusSampleMapper, GameProcessCheck internals)
+// to Desktop.Tests so telemetry-loop logic can be unit tested directly instead of only through
+// BackgroundService's ExecuteAsync surface, matching Infrastructure's own InternalsVisibleTo use.
+[assembly: InternalsVisibleTo("RhinoSurfaceMapper.Desktop.Tests")]
 
 [assembly:ThemeInfo(
     ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located

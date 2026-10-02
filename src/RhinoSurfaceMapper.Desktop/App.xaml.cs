@@ -14,9 +14,11 @@ namespace RhinoSurfaceMapper.Desktop;
 /// WPF composition root. Builds the generic host (configuration, DI, logging), installs the
 /// three global exception handlers required by the design's "Cross-cutting capture" section,
 /// and shows the main window — or, when started with <c>--selftest</c>, logs a startup/shutdown
-/// record and exits immediately without showing any window. <c>--selftest</c> exists because
-/// WebView2 is not yet wired (Phase 3) and this phase has no interactive UI to verify manually;
-/// it is also how the Phase 0 exit criterion ("a log file is produced") is proven non-interactively.
+/// record and exits immediately without showing any window. <c>--selftest</c> is retained from
+/// Phase 0 because the WebView2 Runtime is still not installed on this development machine (see
+/// the design's R1 risk entry), so it remains the only way to prove the host/logging pipeline
+/// non-interactively in this environment even though <see cref="MainWindow"/> now hosts a real
+/// <c>BlazorWebView</c>.
 /// </summary>
 public partial class App : System.Windows.Application
 {
@@ -49,8 +51,9 @@ public partial class App : System.Windows.Application
 
         if (e.Args.Contains("--selftest", StringComparer.OrdinalIgnoreCase))
         {
-            // No BlazorWebView yet (Phase 3) and WebView2 Runtime is not installed on this
-            // machine: self-test proves the host/logging pipeline without any UI at all.
+            // The WebView2 Runtime is still not installed on this development machine (design
+            // risk R1): self-test proves the host/logging pipeline without ever creating the
+            // BlazorWebView control, which would throw at this point if the runtime were missing.
             //
             // Deliberately bypasses Application.Shutdown()/OnExit() here: at this point the
             // WPF dispatcher's message loop (started by Application.Run(), which is still
@@ -69,8 +72,10 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        // Phase 0 ships a plain window; the BlazorWebView shell arrives in Phase 3.
-        var window = new MainWindow();
+        // MainWindow is DI-resolved (not `new`-ed) so its BlazorWebView's RootComponents can
+        // receive the same IServiceProvider the rest of the app uses (AddWpfBlazorWebView()
+        // registers a WebViewManager that resolves JS interop and component services from it).
+        var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
         window.Show();
     }
@@ -112,6 +117,7 @@ public partial class App : System.Windows.Application
         // this class's own base type.
         RhinoSurfaceMapper.Application.ConfigureServices.AddApplication(builder.Services);
         builder.Services.AddInfrastructure(builder.Configuration);
+        builder.Services.AddWpfShell(builder.Configuration);
 
         return builder.Build();
     }

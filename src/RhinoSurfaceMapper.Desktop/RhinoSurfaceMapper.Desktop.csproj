@@ -4,9 +4,9 @@
        TargetFramework must stay net10.0-windows here (WPF), overriding the root default.
        CS1591 is kept as a warning (not an error), per the design's "Code documentation
        standard": XAML code-behind generated members cannot always carry an XML doc comment.
-       No BlazorWebView yet (Phase 3): WebView2 Runtime is not installed on this machine,
-       so Phase 0 ships a plain WPF window that builds the generic host, wires logging,
-       and exits — see MainWindow.xaml.cs and App.xaml.cs. -->
+       MainWindow.xaml hosts a real BlazorWebView (Phase 3); the WebView2 Runtime still is not
+       installed on this development machine, so App.xaml.cs retains the self-test ("-selftest"
+       argument) escape hatch (see its doc comment) for non-interactive verification here. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -16,12 +16,16 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.11" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Content Include="wwwroot\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

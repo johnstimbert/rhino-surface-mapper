@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using RhinoSurfaceMapper.Application.Interfaces;
 using RhinoSurfaceMapper.Application.Mediator;
+using RhinoSurfaceMapper.Application.Services;
 
 namespace RhinoSurfaceMapper.Application;
 
@@ -9,7 +11,9 @@ namespace RhinoSurfaceMapper.Application;
 public static class ConfigureServices
 {
     /// <summary>
-    /// Registers the custom mediator and its pipeline behaviors into the DI container.
+    /// Registers the custom mediator and its pipeline behaviors, plus the Application-owned
+    /// <see cref="Interfaces.IMapSessionStore"/>/<see cref="Interfaces.IMapSessionNotifier"/>
+    /// singletons, into the DI container.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -39,6 +43,12 @@ public static class ConfigureServices
         // wrapper — LoggingPipelineBehavior therefore wraps ExceptionLoggingBehavior.
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingPipelineBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ExceptionLoggingBehavior<,>));
+
+        // Singletons per the design's "Application services and interfaces" table: exactly one
+        // MapSession is live for the whole process (risk R10), shared by every hosted service
+        // and by the UI's map canvas presenter.
+        services.AddSingleton<IMapSessionStore, MapSessionStore>();
+        services.AddSingleton<IMapSessionNotifier, MapSessionNotifier>();
 
         return services;
     }

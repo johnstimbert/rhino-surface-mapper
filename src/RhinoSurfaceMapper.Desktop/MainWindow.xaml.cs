@@ -3,13 +3,14 @@
 namespace RhinoSurfaceMapper.Desktop;
 
 /// <summary>
-/// Placeholder main window for Phase 0. The real shell (<c>BlazorWebView</c> + map canvas)
-/// arrives in Phase 3; for now this plain window only proves the WPF host starts and a
-/// <see cref="Window"/> can be shown once logging/DI are wired.
+/// Hosts the read-only map canvas: a single <c>BlazorWebView</c> (declared in
+/// <c>MainWindow.xaml</c>) rooted at <c>RhinoSurfaceMapper.UI.Components.Layout.Routes</c>, which
+/// in turn composes <c>MainLayout</c> around <c>MapCanvas</c>. No navigation, dialogs, or options
+/// panel yet — those are later phases.
 /// </summary>
 public partial class MainWindow : Window
 {
-    /// <summary>Initializes the window's XAML-defined components.</summary>
+    /// <summary>Initializes the window's XAML-defined components, including the <c>BlazorWebView</c>.</summary>
     public MainWindow()
     {
         InitializeComponent();

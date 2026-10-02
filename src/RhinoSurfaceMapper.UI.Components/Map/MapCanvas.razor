@@ -1,0 +1,9 @@
+@* Read-only map canvas: hosts the <canvas> element that wwwroot/map-canvas.js owns the
+   requestAnimationFrame draw loop and pan/zoom gestures for. Owns no parameters in this phase
+   (Phase 3: read-only map display) — it renders whatever the single live MapSession currently
+   holds, via IMapSessionStore/MapScenePresenter in its code-behind. *@
+@namespace RhinoSurfaceMapper.UI.Components.Map
+
+<div class="map-canvas-container">
+    <canvas @ref="_canvasElement" class="map-canvas"></canvas>
+</div>
