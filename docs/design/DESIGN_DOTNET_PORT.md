@@ -141,7 +141,7 @@ No external dependencies. Contains the Qt-free rules currently in `mapper_core.p
 
 #### Enums
 
-`DepositSize` (`Pequeno`, `Medio`, `Grande`, `Enorme` — persisted using the original Portuguese strings via an explicit converter, displayed as translated Small/Medium/Large/Huge), `RouteStatus` (`Reached`, `Skipped`), `SteeringStatus` (`Stopped`, `Waiting`, `Slowing`, `Correcting`, `OnCourse`, `Easing`), `MapOpenMode` (`Editable`, `MiningOnly`).
+`DepositSize` (`Pequeno`, `Medio`, `Grande`, `Enorme` — see decision D7 below for the persisted representation), `RouteStatus` (`Reached`, `Skipped`), `SteeringStatus` (`Stopped`, `Waiting`, `Slowing`, `Correcting`, `OnCourse`, `Easing`), `MapOpenMode` (`Editable`, `MiningOnly`).
 
 #### Domain services (pure, static or stateless)
 
@@ -445,9 +445,19 @@ The DTO writes exactly these keys, in this order, always:
 
 Session-only fields (`mining_only`, `map_generation`, telemetry, navigation, `status_path`, `center_enabled`, overlay state) are never written.
 
-Read-side defaults for absent keys: `system`/`body` `""`; `created_at`/`last_saved_at` `null`; `favorite`/`protected` `false`; `pml_id` `""`; `planet_radius` `6371000.0`; **`coverage_width_m` `500.0`** (note: differs from the write default); `scanner_range_m` `2000.0`; `search_started` `false`; `search_azimuth` `0`; `route_index` `0`; all collections `[]`. Legacy deposits without size/rigs become `Pequeno` / `1`. Markers missing `lat`/`lon` are reconstructed through `GeographicFromLocal`.
+Read-side defaults for absent keys: `system`/`body` `""`; `created_at`/`last_saved_at` `null`; `favorite`/`protected` `false`; `pml_id` `""`; `planet_radius` `6371000.0`; **`coverage_width_m` `500.0`** (note: differs from the write default); `scanner_range_m` `2000.0`; `search_started` `false`; `search_azimuth` `0`; `route_index` `0`; all collections `[]`. Legacy deposits without size/rigs become the smallest size / `1`. Markers missing `lat`/`lon` are reconstructed through `GeographicFromLocal`.
 
-`MapValidator` enforces the full Python rule set — string identity fields, paired PML coordinates, finite ranges (`coverage_width_m` 100–5000, `scanner_range_m` 500–5000, radar radius 0–5000), exact-integer `search_azimuth` 0–359, `route_index` 0–13, complete datum when searching, deposit sizes from the four Portuguese values, deposit rigs 1–6, route statuses `reached`/`skipped`, non-empty mark names — and a failed load must leave the previous session untouched (load into a candidate, validate, compute next target, then swap).
+`MapValidator` enforces the full Python rule set — string identity fields, paired PML coordinates, finite ranges (`coverage_width_m` 100–5000, `scanner_range_m` 500–5000, radar radius 0–5000), exact-integer `search_azimuth` 0–359, `route_index` 0–13, complete datum when searching, deposit sizes from the four recognised values (decision D7), deposit rigs 1–6, route statuses `reached`/`skipped`, non-empty mark names — and a failed load must leave the previous session untouched (load into a candidate, validate, compute next target, then swap).
+
+### D7 — All .NET-facing text in English; persisted deposit-size literals migrate from Portuguese to English on load
+
+Superseding the original plan to keep `"Pequeno"/"Médio"/"Grande"/"Enorme"` as the permanent on-disk representation: **every string the .NET port owns — exception messages, validation messages, log messages, UI text — is English.** This includes the deposit-size literal written into `.json` map files.
+
+- `DepositSizeCodec.Encode` writes the English canonical literals `"Small"`, `"Medium"`, `"Large"`, `"Huge"` going forward.
+- `DepositSizeCodec.Decode` accepts **both** the legacy Portuguese literals and the new English ones, so a map saved by the original Python app (or by an un-migrated .NET build) still loads correctly.
+- **Startup migration:** `Infrastructure` adds a `LegacyMapMigrationService` (a `IHostedService` that runs once, before the telemetry/radar/steering loops start). On startup it enumerates every map under `IAppPaths.MapsDirectory`, loads each through `IMapRepository.LoadAsync`, and — if any deposit used a legacy Portuguese literal — re-saves the file (same path, `updateSavedAt: false` so the user-visible timestamps are not disturbed) so the literal is rewritten in English. The migration is idempotent: a map with no legacy literals is loaded and compared but not rewritten. Each migrated file is logged at `Information` (`LogEvents` lifecycle band) with its path; a failed migration for one file is logged at `Warning` and does not stop the others (specific exceptions only — `IOException`, `UnauthorizedAccessException`, `MapValidationException` — never a bare `catch`). A summary line (`N of M maps migrated`) is logged once the pass completes.
+- Exception/validation messages throughout `Domain` (e.g. `MapValidator`, `NumberCoercion`, `DepositSizeCodec`, `MapSession`) are in English; exact Python string parity is **no longer** a requirement for these (it was for behavioural/golden-file testing of accept/reject decisions, not for message text, and the two are independent — the golden-file and differential tests in "Testing strategy" compare saved-map bytes and domain state, never exception text).
+- This decision is implemented in Phase 1 (Domain: English messages, codec encode/decode split) and Phase 2 (Infrastructure: `LegacyMapMigrationService`, wired into the Desktop host startup sequence ahead of the hosted telemetry/radar/steering services).
 
 **Exact-boolean semantics:** `favorite`/`protected` must be real JSON booleans; `1`/`"true"` are rejected. `System.Text.Json` enforces this by default for `bool`, so the converter must not enable `AllowReadingFromString` for those properties.
 
