@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework, Nullable, ImplicitUsings and documentation settings are inherited
+       from the root Directory.Build.props. Domain has no third-party or project
+       dependencies by design (see "Dependency rule" in DESIGN_DOTNET_PORT.md). -->
+
+</Project>

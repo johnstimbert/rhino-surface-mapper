@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework, Nullable, ImplicitUsings and documentation settings are inherited
+       from the root Directory.Build.props. CS1591 is kept as a warning (not an error) here,
+       per the design's "Code documentation standard": generated LibraryImport partial
+       methods cannot always carry an XML doc comment. -->
+  <PropertyGroup>
+    <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RhinoSurfaceMapper.Application\RhinoSurfaceMapper.Application.csproj" />
+    <ProjectReference Include="..\RhinoSurfaceMapper.Domain\RhinoSurfaceMapper.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

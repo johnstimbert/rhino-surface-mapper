@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    Solution-wide defaults (Phase 0 of docs/design/DESIGN_DOTNET_PORT.md).
+
+    CS1591 ("missing XML comment on a publicly visible member") is promoted to an
+    error by TreatWarningsAsErrors for every project by default, which matches the
+    design's requirement for Domain/Application/Infrastructure. Platform.Windows,
+    UI.Components and Desktop opt back out with <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
+    in their own .csproj, because generated P/Invoke wrappers and Razor-backed
+    members cannot always be annotated. Test projects disable XML doc generation
+    entirely (no public API surface to document) via GenerateDocumentationFile=false.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

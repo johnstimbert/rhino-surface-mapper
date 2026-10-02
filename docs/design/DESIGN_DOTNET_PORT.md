@@ -1,6 +1,6 @@
 # Technical Design: .NET / Blazor Port of Rhino Surface Mapper
 
-**Status:** Proposed
+**Status:** Approved — all open questions resolved 2026-10-02; implementation starts at Phase 0
 **Target runtime:** .NET 10, Windows 10/11 x64
 **Reference architecture:** `TheUnofficialWythevilleApp` (Clean Architecture, in-house CQRS mediator, FluentValidation, feature-per-file)
 **Source of truth for behaviour:** the preserved Python application in [`python/`](../../python)
@@ -323,7 +323,7 @@ Numeric formatting must be invariant-culture and must round-trip doubles (`R`/sh
 #### Market
 
 - `SpanshMarketClient` using a typed `HttpClient` (`BaseAddress = https://spansh.co.uk/api`, `Timeout = 25 s`) registered with `AddHttpClient<>` plus a resilience handler configured for transient faults only. Endpoints: `POST /systems/search` (page size 100, exact case-insensitive name match, count/short-page termination rules), `GET /system/{id64}`, `GET /station/{marketId}`. Fatal failures throw `SpanshException`; station-level failures become `MarketIssue` records.
-- `InaraSummaryParser` — HTML parsing of columns 0/1/4 using `AngleSharp` **or** a hand-written tolerant tokeniser. *Open question O3.*
+- `InaraSummaryParser` — HTML parsing of columns 0/1/4 using **`AngleSharp`** (decision D3). The hand-written tokeniser of `inara.py` is not reproduced: INARA's markup changes without notice, and a real HTML parser fails predictably where a tokeniser fails silently. `AngleSharp` is confined to this one type so the dependency stays replaceable.
 - `CommodityCatalog` — loads `SURFACE_MINING_COMMODITIES.json` (37 records, strict schema validation → `CatalogueFormatException`) and implements `NormalizeName` with `string.Normalize(NormalizationForm.FormKD)`, combining-mark stripping, alphanumeric filtering and `ToLowerInvariant`, plus the two canonical aliases.
 
 #### Logging provider
@@ -350,7 +350,7 @@ Every injection precondition from the Python implementation is enforced in `Send
 
 ### `RhinoSurfaceMapper.UI.Components`
 
-A Razor class library (`Microsoft.NET.Sdk.Razor`) holding every page and component. MudBlazor is **not** adopted: the reference app's component library targets a public web product, whereas this UI is a dense desktop tool whose dominant surface is a custom canvas. Plain Razor components with a scoped CSS design system keep the WebView payload small and the rendering predictable. *Open question O1.*
+A Razor class library (`Microsoft.NET.Sdk.Razor`) holding every page and component. MudBlazor is **not** adopted: the reference app's component library targets a public web product, whereas this UI is a dense desktop tool whose dominant surface is a custom canvas. Plain Razor components with a scoped CSS design system keep the WebView payload small and the rendering predictable (decision D1).
 
 ```
 Components/
@@ -473,7 +473,7 @@ Logging is a first-class requirement (N5). The design has four parts.
 |---|---|
 | `RollingFileLoggerProvider` (custom) | Durable structured logs under `<app>/logs/` |
 | `DebugLoggerProvider` | Visual Studio output during development |
-| `EventLogLoggerProvider` *(optional, off by default)* | Startup/shutdown failures only — *Open question O4* |
+| `EventLogLoggerProvider` *(optional, off by default)* | Startup/shutdown failures only |
 
 `RollingFileLoggerProvider` design:
 
@@ -559,7 +559,7 @@ The two hot loops default to `Warning` precisely so that `Information` stays rea
 - `IStringLocalizer<TContext>` is injected into components and handlers that produce user-facing text.
 - Default culture `en-GB`; `pt-PT` from `Resources/*.pt-PT.resx`. The culture is applied at startup from the `language` preference and, as today, a change takes effect after restart.
 - Placeholders (`{count}`, `{system}`, `{body}`, `{error}`, `{pml_id}`) are preserved; a test asserts every pt-PT entry keeps the same placeholder set as its source string.
-- A one-off `tools/TsToResx` conversion utility produces the initial `.resx` files from `python/translations/rsm_pt_PT.ts`. *Open question O2.*
+- A `tools/TsToResx` conversion utility, committed to the repository, produces the initial `.resx` files from `python/translations/rsm_pt_PT.ts` (decision D2). It is a console project excluded from the shipped output, kept so additional languages or a refreshed catalogue can be re-converted rather than hand-migrated.
 
 ---
 
@@ -642,16 +642,22 @@ Although the design covers full parity, implementation should land in reviewable
 
 ---
 
-## Open questions
+## Resolved decisions
 
-| # | Question | Impact |
-|---|---|---|
-| O1 | Plain Razor + scoped CSS, or MudBlazor for parity with the reference app's component conventions? | Affects every dialog and the options panel; MudBlazor adds ~1 MB of assets and a theming model that fights the dense desktop layout |
-| O2 | Should the `.ts` → `.resx` conversion be a committed one-off tool (`tools/TsToResx`) or a manual migration? | A tool is reusable if more languages arrive; manual is faster once |
-| O3 | INARA parsing: take a dependency on `AngleSharp`, or hand-write a tolerant table tokeniser as `inara.py` does? | `AngleSharp` is robust but is a new third-party dependency; the Python original deliberately uses only the standard library |
-| O4 | Should the headless-browser INARA acquisition (currently a Chrome/Edge `--dump-dom` subprocess in the consumer script) be shipped in-app at all, or stay a developer tool? | Shipping it means spawning a browser from a desktop app, which some users and AV products will flag |
-| O5 | Does the Python application remain maintained in parallel during the port, or is it frozen at Beta 1? | Decides whether behavioural fixes must be applied twice |
-| O6 | Should the overlay eventually become click-through (`WS_EX_TRANSPARENT`)? Current behaviour is intentionally interactive, but it can steal focus from the game | A behaviour change, so it is out of scope for parity but worth a decision |
+All design-blocking questions were answered on 2026-10-02. They are recorded here with their consequences; the sections above have been updated to match.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| D1 | Plain Razor + scoped CSS, or MudBlazor? | **Plain Razor + scoped CSS** | No MudBlazor dependency anywhere. `UI.Components` ships a small scoped-CSS design system; the dense desktop layout and the custom canvas stay under our control, and the WebView payload stays minimal |
+| D2 | `.ts` → `.resx` as a committed tool or a manual migration? | **Committed tool `tools/TsToResx`** | A console project in `tools/`, excluded from the shipped output and from the installer, re-runnable when the catalogue changes or a language is added |
+| D3 | INARA parsing: `AngleSharp` or a hand-written tokeniser? | **`AngleSharp`** | The one approved third-party dependency beyond the framework. Referenced only by `Infrastructure`, used only by `InaraSummaryParser`, which is kept behind an interface so the dependency remains replaceable |
+| D4 | Ship the headless-browser INARA acquisition in-app? | **No — developer tool only** | The shipped application never spawns a browser. Acquisition stays a `tools/` script; the app consumes `inara_summary_cache_v1.json` if present and degrades gracefully when it is absent or stale |
+| D5 | Does the Python app stay maintained during the port? | **Frozen at Beta 1** | `python/` is reference-only. Behavioural fixes are made in the .NET tree; any Python change must be deliberate and mirrored. Removes risk R8 as an ongoing concern |
+| D6 | Should the overlay become click-through? | **Out of scope — keep parity** | The overlay stays interactive, exactly as the Qt implementation behaves. `WS_EX_TRANSPARENT` may be revisited post-parity as a separately designed opt-in preference |
+
+### Outstanding prerequisite
+
+The **WebView2 Runtime was not detected** on the current development machine. It must be installed (and its absence handled per risk R1) before Phase 3; Phases 0–2 are unaffected.
 
 ---
 
@@ -666,7 +672,7 @@ Although the design covers full parity, implementation should land in reviewable
 | R5 | GC pauses or `Dispatcher` contention stall the 16 ms loops | Medium | Hot paths are allocation-free (`[LoggerMessage]`, pooled buffers, struct samples); loops run off the UI thread; server GC disabled, concurrent GC enabled |
 | R6 | WinMM joystick API is legacy and limited to 32 buttons / 16 devices | Medium | Preserve exact parity first (users' bindings depend on it); consider RawInput or DirectInput as a later, separately designed enhancement |
 | R7 | Low-level keyboard hook flagged by anti-cheat or AV | Medium | Hook is observation-only and always calls `CallNextHookEx`; document the behaviour; keep the feature opt-in and disabled by default |
-| R8 | Two implementations diverge during a long port | Medium | Freeze Python feature work during the port (see O5); the differential test is run in CI against both trees |
+| R8 | Two implementations diverge during a long port | Medium | Python feature work is frozen at Beta 1 (decision D5); the differential test is run in CI against both trees |
 | R9 | Qt-specific UI nuances (elided cursor text, preview framing maths, splitter ratio fallbacks) are subtly lost | Low | These are covered by explicit ported tests (`test_map_preview_framing`, `test_map_library_splitter_persistence`) rather than visual inspection |
 | R10 | Mutable `MapSession` shared across loops invites race conditions | Medium | Single mutation gate (`SemaphoreSlim`), immutable collections for readers, and no mutation from the UI thread outside handlers |
 ```

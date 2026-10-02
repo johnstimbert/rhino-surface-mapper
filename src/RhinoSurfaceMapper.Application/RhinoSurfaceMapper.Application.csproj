@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- TargetFramework, Nullable, ImplicitUsings and documentation settings are inherited
+       from the root Directory.Build.props. -->
+
+  <ItemGroup>
+    <!-- FluentValidation is not yet required: Phase 0 adds no command/query features.
+         It will be added in Phase 1+ once the first validated feature is implemented,
+         mirroring the reference app's explicit-handler / auto-scanned-validator split. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RhinoSurfaceMapper.Domain\RhinoSurfaceMapper.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

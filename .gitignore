@@ -25,3 +25,9 @@ archive/
 .github/agents/dotnet-implementer.agent.md
 .github/agents/dotnet-technical-writer.agent.md
 .github/agents/dotnet-unit-test-engineer.agent.md
+
+# .NET build output (Phase 0 solution under src/ and tests/)
+[Bb]in/
+[Oo]bj/
+*.user
+.vs/
